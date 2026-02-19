@@ -611,3 +611,115 @@ async function listMemories(
     return all;
   }
 }
+
+// --- Plugin ---
+const plugin = {
+  id: "openclaw-vertex-memorybank",
+  name: "Memory (Vertex AI Memory Bank)",
+  kind: "general" as const,
+
+  register(api: any) {
+    const config = api.pluginConfig as MemoryBankConfig;
+    const autoRecall = config.autoRecall !== false;
+    const autoCapture = config.autoCapture !== false;
+    const autoSyncFiles = config.autoSyncFiles !== false;
+    const autoSyncTopics = config.autoSyncTopics !== false;
+    const backgroundGenerate = config.backgroundGenerate !== false;
+
+    const workspaceDir =
+      api.workspaceDir ||
+      process.env.OPENCLAW_WORKSPACE ||
+      join(process.env.HOME || process.env.USERPROFILE || ".", ".openclaw", "workspace");
+
+    // --- Startup service ---
+    api.registerService({
+      id: "memorybank-sync",
+      async start() {
+        if (autoSyncTopics) await syncInstanceConfig(config);
+        if (autoSyncFiles) {
+          loadSyncIndex(workspaceDir);
+          const files = collectMemoryFiles(workspaceDir);
+          const changed = getChangedFiles(files);
+          if (changed.length > 0) {
+            console.log(`[memory-vertex] startup: ${changed.length} changed file(s) to sync`);
+            await syncFiles(config, changed);
+          } else {
+            console.log("[memory-vertex] startup: all files in sync");
+          }
+        }
+      },
+    });
+
+    // --- Auto-recall ---
+    if (autoRecall) {
+      api.on("before_agent_start", async (event: any) => {
+        const query = event.prompt || "";
+        if (!query || query.length < 5) return;
+
+        const memories = await retrieveMemories(config, query);
+        if (memories.length === 0) return;
+
+        const introspection = config.introspection || "scores";
+        const formatted = memories
+          .map((m: any, i: number) => {
+            const fact = m.memory?.fact || m.fact || JSON.stringify(m);
+            if (introspection === "off") {
+              return `${i + 1}. ${fact}`;
+            }
+            // "scores" (default) — include similarity score
+            const score = m.score ?? m.similarity ?? m.distance ?? null;
+            const scoreStr = score != null ? ` [score: ${(typeof score === "number" ? score.toFixed(3) : score)}]` : "";
+            return `${i + 1}. ${fact}${scoreStr}`;
+          })
+          .join("\n");
+
+        return {
+          prependContext: `<vertex_memory_bank>\nRelevant memories from prior sessions:\n${formatted}\n</vertex_memory_bank>`,
+        };
+      });
+    }
+
+    // --- Auto-capture ---
+    if (autoCapture) {
+      api.on("agent_end", async (event: any) => {
+        if (!event.success) return;
+
+        // 1. Capture last message pair
+        const messages = (event.messages || [])
+          .filter((m: any) => m.role === "user" || m.role === "assistant")
+          .map((m: any) => ({
+            role: m.role,
+            content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+          }));
+
+        // Skip capture if messages are too short (noise filter)
+        const lastUserMsg = [...messages].reverse().find((m: any) => m.role === "user");
+        const lastAssistantMsg = [...messages].reverse().find((m: any) => m.role === "assistant");
+        const userLen = lastUserMsg?.content?.length || 0;
+        const totalLen = (lastUserMsg?.content?.length || 0) + (lastAssistantMsg?.content?.length || 0);
+
+        if (userLen < 20 || totalLen < 100) {
+          console.log(`[memory-vertex] skipped capture: too short (user=${userLen}, total=${totalLen})`);
+        } else if (messages.length > 0) {
+          const capture = captureFromConversation(config, messages);
+          if (!backgroundGenerate) await capture;
+          else capture.catch((e) => console.error(`[memory-vertex] bg capture error: ${e}`));
+        }
+
+        // 2. Sync changed files
+        if (autoSyncFiles) {
+          try {
+            const files = collectMemoryFiles(workspaceDir);
+            const changed = getChangedFiles(files);
+            if (changed.length > 0) {
+              console.log(`[memory-vertex] agent_end: ${changed.length} changed file(s) to sync`);
+              const sync = syncFiles(config, changed);
+              if (!backgroundGenerate) await sync;
+              else sync.catch((e) => console.error(`[memory-vertex] bg file sync error: ${e}`));
+            }
+          } catch (e: any) {
+            console.error(`[memory-vertex] file change detection error: ${e.message}`);
+          }
+        }
+      });
+    }
