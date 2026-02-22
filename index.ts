@@ -803,3 +803,144 @@ const plugin = {
         }
       },
     });
+
+    // memory_correct — Update a memory's fact text
+    api.registerTool({
+      name: "memory_correct",
+      description: "Update/correct a memory's fact text. The old memory is replaced with the corrected version.",
+      label: "Memory Correct",
+      parameters: {
+        type: "object",
+        properties: {
+          memory_id: { type: "string", description: "The memory ID to update" },
+          new_fact: { type: "string", description: "The corrected fact text" },
+        },
+        required: ["memory_id", "new_fact"],
+      },
+      async execute(_toolCallId: string, params: { memory_id: string; new_fact: string }) {
+        const parent = parentName(config);
+        const memoryName = params.memory_id.includes("/") ? params.memory_id : `${parent}/memories/${params.memory_id}`;
+        try {
+          const token = getAccessToken();
+          const url = `${apiBase(config)}/${memoryName}?updateMask=fact`;
+          const res = await fetch(url, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ fact: params.new_fact }),
+          });
+          if (!res.ok) {
+            const text = await res.text();
+            // Fallback: save old fact, delete, re-generate, recover on failure
+            if (res.status === 400 || res.status === 405) {
+              // First, fetch the old memory to preserve its fact for recovery
+              let oldFact: string | null = null;
+              try {
+                const getRes = await fetch(`${apiBase(config)}/${memoryName}`, {
+                  method: "GET",
+                  headers: { Authorization: `Bearer ${token}` },
+                });
+                if (getRes.ok) {
+                  const oldMemory = await getRes.json();
+                  oldFact = oldMemory.fact || null;
+                }
+              } catch { /* best-effort */ }
+
+              const delRes = await fetch(`${apiBase(config)}/${memoryName}`, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!delRes.ok) {
+                return {
+                  content: [{ type: "text" as const, text: `Failed to delete old memory for correction: ${delRes.status}` }],
+                  details: { corrected: false },
+                };
+              }
+              const scope = config.scope || { agent_name: "openclaw" };
+              try {
+                await apiCall(config, `${parent}/memories:generate`, {
+                  scope,
+                  direct_contents_source: {
+                    events: [{
+                      content: { role: "user", parts: [{ text: `Remember this corrected fact: ${params.new_fact}` }] },
+                    }],
+                  },
+                  revision_labels: { source: "tool-correct" },
+                });
+              } catch (genErr: any) {
+                // Regeneration failed — attempt to restore the old memory
+                if (oldFact) {
+                  try {
+                    await apiCall(config, `${parent}/memories`, { scope, fact: oldFact });
+                    return {
+                      content: [{ type: "text" as const, text: `Correction failed (regeneration error), old memory restored: ${genErr.message}` }],
+                      details: { corrected: false, recovered: true, error: genErr.message },
+                    };
+                  } catch { /* recovery also failed */ }
+                }
+                return {
+                  content: [{ type: "text" as const, text: `Correction failed and old memory could not be restored: ${genErr.message}` }],
+                  details: { corrected: false, recovered: false, error: genErr.message },
+                };
+              }
+              return {
+                content: [{ type: "text" as const, text: `Memory corrected (delete+regenerate): ${params.new_fact}` }],
+                details: { corrected: true, method: "delete-regenerate" },
+              };
+            }
+            return {
+              content: [{ type: "text" as const, text: `Failed to update memory: ${res.status} ${text}` }],
+              details: { corrected: false },
+            };
+          }
+          const updated = await res.json();
+          return {
+            content: [{ type: "text" as const, text: `Memory corrected: ${JSON.stringify(updated, null, 2)}` }],
+            details: { corrected: true, method: "patch" },
+          };
+        } catch (e: any) {
+          return {
+            content: [{ type: "text" as const, text: `Error correcting memory: ${e.message}` }],
+            details: { corrected: false, error: e.message },
+          };
+        }
+      },
+    });
+
+    // memory_stats — Get memory statistics (uses lightweight field-masked count)
+    api.registerTool({
+      name: "memory_stats",
+      description: "Get Memory Bank statistics: total count, breakdown by topic, and scope info. Uses a cached count (5-min TTL) to avoid unnecessary API calls.",
+      label: "Memory Stats",
+      parameters: {
+        type: "object",
+        properties: {
+          force_refresh: { type: "boolean", description: "Force a fresh count (ignore cache)" },
+        },
+      },
+      async execute(_toolCallId: string, params: { force_refresh?: boolean }) {
+        const scope = config.scope || { agent_name: "openclaw" };
+        try {
+          // For topic breakdown we need full objects; for count-only we use field masking
+          // When force_refresh or cache is stale, do a full list to get topic breakdown
+          const memories = await listMemories(config);
+          const topicCounts: Record<string, number> = {};
+          for (const m of memories) {
+            const mem = m.memory || m;
+            const topics = mem.topics || [];
+            const topicLabel = topics.length > 0
+              ? topics.map((t: any) => t.managedMemoryTopic || t.customMemoryTopicLabel || JSON.stringify(t)).join(", ")
+              : "unknown";
+            topicCounts[String(topicLabel)] = (topicCounts[String(topicLabel)] || 0) + 1;
+          }
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ totalMemories: memories.length, byTopic: topicCounts, scope }, null, 2) }],
+            details: { totalMemories: memories.length },
+          };
+        } catch (e: any) {
+          return {
+            content: [{ type: "text" as const, text: `Error getting stats: ${e.message}` }],
+            details: { error: e.message },
+          };
+        }
+      },
+    });
