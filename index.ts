@@ -944,3 +944,130 @@ const plugin = {
         }
       },
     });
+
+    // --- CLI ---
+    api.registerCli(
+      (ctx: any) => {
+        const prog = ctx.program;
+
+        prog
+          .command("memorybank-status")
+          .description("Show Memory Bank status")
+          .action(async () => {
+            console.log("Vertex AI Memory Bank Plugin");
+            console.log(`  Project:     ${config.projectId}`);
+            console.log(`  Location:    ${config.location}`);
+            console.log(`  Engine:      ${config.reasoningEngineId}`);
+            console.log(`  Scope:       ${JSON.stringify(config.scope || { agent_name: "openclaw" })}`);
+            console.log(`  Recall:      ${autoRecall}`);
+            console.log(`  Capture:     ${autoCapture}`);
+            console.log(`  File Sync:   ${autoSyncFiles}`);
+            console.log(`  Topic Sync:  ${autoSyncTopics}`);
+            console.log(`  Perspective: ${config.perspective || "third"}-person`);
+            console.log(`  TTL:         ${config.ttlSeconds ? `${Math.round(config.ttlSeconds / 86400)} days` : "none (memories persist forever)"}`);
+            console.log(`  Introspect:  ${config.introspection || "scores"}`);
+            try {
+              getAccessToken();
+              console.log("  Auth:        OK");
+            } catch {
+              console.log("  Auth:        FAILED");
+            }
+            try {
+              const total = await countMemories(config, { force: true });
+              console.log(`  Memories:    ${total} in scope`);
+            } catch (e: any) {
+              console.log(`  Memories:    error (${e.message})`);
+            }
+            if (autoSyncFiles) {
+              loadSyncIndex(workspaceDir);
+              const files = collectMemoryFiles(workspaceDir);
+              const changed = getChangedFiles(files);
+              console.log(`  Files:       ${files.length} tracked, ${changed.length} pending`);
+            }
+          });
+
+        prog
+          .command("memorybank-search")
+          .description("Search memories")
+          .argument("<query>", "Search query")
+          .option("--top-k <n>", "Max results", "10")
+          .option("--show-ids", "Show memory IDs")
+          .action(async (query: string, opts: any) => {
+            const memories = await retrieveMemories({ ...config, topK: parseInt(opts.topK) }, query);
+            if (memories.length === 0) return console.log("No memories found.");
+            memories.forEach((m: any, i: number) => {
+              const fact = m.memory?.fact || m.fact || JSON.stringify(m);
+              const id = m.memory?.name?.split("/").pop() || "";
+              const dist = m.distance != null ? ` [dist=${m.distance.toFixed(3)}]` : "";
+              console.log(`${i + 1}. ${fact}${dist}${opts.showIds && id ? ` (id: ${id})` : ""}`);
+            });
+          });
+
+        prog
+          .command("memorybank-list")
+          .description("List all memories in scope")
+          .option("--show-ids", "Show memory IDs")
+          .option("--count-only", "Only show count (uses lightweight field-masked API)")
+          .action(async (opts: any) => {
+            if (opts.countOnly) {
+              const total = await countMemories(config, { force: true });
+              console.log(`Total memories: ${total}`);
+              return;
+            }
+            const memories = await listMemories(config);
+            if (memories.length === 0) return console.log("No memories in scope.");
+            console.log(`Total: ${memories.length} memories\n`);
+            memories.forEach((m: any, i: number) => {
+              const fact = m.memory?.fact || m.fact || JSON.stringify(m);
+              const id = m.memory?.name?.split("/").pop() || "";
+              console.log(`${i + 1}. ${fact}${opts.showIds && id ? ` (id: ${id})` : ""}`);
+            });
+          });
+
+        prog
+          .command("memorybank-sync")
+          .description("Manually sync files")
+          .action(async () => {
+            loadSyncIndex(workspaceDir);
+            const files = collectMemoryFiles(workspaceDir);
+            const changed = getChangedFiles(files);
+            if (changed.length === 0) return console.log("All files in sync.");
+            console.log(`Syncing ${changed.length} file(s)...`);
+            await syncFiles(config, changed);
+            console.log("Done.");
+          });
+
+        prog
+          .command("memorybank-remember")
+          .description("Directly store a fact as a memory")
+          .argument("<fact>", "The fact to remember")
+          .action(async (fact: string) => {
+            try {
+              await createMemory(config, fact, { waitForResult: true, source: "cli-remember" });
+              adjustCachedCount(1);
+              console.log("Stored.");
+            } catch {
+              console.log("Failed to store memory.");
+            }
+          });
+
+        prog
+          .command("memorybank-forget")
+          .description("Delete a memory by ID")
+          .argument("<memoryId>", "Memory ID to delete (use --show-ids with search/list to find IDs)")
+          .action(async (memoryId: string) => {
+            try {
+              await deleteMemory(config, memoryId);
+              adjustCachedCount(-1);
+              console.log("Deleted.");
+            } catch (e: any) {
+              console.error(`Failed to delete: ${e.message}`);
+            }
+          });
+      },
+      { commands: ["memorybank-status", "memorybank-search", "memorybank-list", "memorybank-sync", "memorybank-remember", "memorybank-forget"] }
+    );
+  },
+};
+
+export default plugin;
