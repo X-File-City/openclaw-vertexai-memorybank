@@ -799,83 +799,75 @@ const plugin = {
       },
       async execute(_toolCallId: string, params: { memory_id: string; new_fact: string }) {
         const parent = parentName(config);
+        const base = apiBase(config);
         const memoryName = params.memory_id.includes("/") ? params.memory_id : `${parent}/memories/${params.memory_id}`;
-        try {
-          const token = getAccessToken();
-          const url = `${apiBase(config)}/${memoryName}?updateMask=fact`;
-          const res = await fetch(url, {
-            method: "PATCH",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ fact: params.new_fact }),
-          });
-          if (!res.ok) {
-            const text = await res.text();
-            // Fallback: save old fact, delete, re-generate, recover on failure
-            if (res.status === 400 || res.status === 405) {
-              // First, fetch the old memory to preserve its fact for recovery
-              let oldFact: string | null = null;
-              try {
-                const getRes = await fetch(`${apiBase(config)}/${memoryName}`, {
-                  method: "GET",
-                  headers: { Authorization: `Bearer ${token}` },
-                });
-                if (getRes.ok) {
-                  const oldMemory = await getRes.json();
-                  oldFact = oldMemory.fact || null;
-                }
-              } catch { /* best-effort */ }
 
-              const delRes = await fetch(`${apiBase(config)}/${memoryName}`, {
-                method: "DELETE",
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              if (!delRes.ok) {
-                return {
-                  content: [{ type: "text" as const, text: `Failed to delete old memory for correction: ${delRes.status}` }],
-                  details: { corrected: false },
-                };
-              }
-              const scope = config.scope || { agent_name: "openclaw" };
-              try {
-                await apiCall(config, `${parent}/memories:generate`, {
-                  scope,
-                  direct_contents_source: {
-                    events: [{
-                      content: { role: "user", parts: [{ text: `Remember this corrected fact: ${params.new_fact}` }] },
-                    }],
-                  },
-                  revision_labels: { source: "tool-correct" },
-                });
-              } catch (genErr: any) {
-                // Regeneration failed — attempt to restore the old memory
-                if (oldFact) {
-                  try {
-                    await apiCall(config, `${parent}/memories`, { scope, fact: oldFact });
-                    return {
-                      content: [{ type: "text" as const, text: `Correction failed (regeneration error), old memory restored: ${genErr.message}` }],
-                      details: { corrected: false, recovered: true, error: genErr.message },
-                    };
-                  } catch { /* recovery also failed */ }
-                }
-                return {
-                  content: [{ type: "text" as const, text: `Correction failed and old memory could not be restored: ${genErr.message}` }],
-                  details: { corrected: false, recovered: false, error: genErr.message },
-                };
-              }
-              return {
-                content: [{ type: "text" as const, text: `Memory corrected (delete+regenerate): ${params.new_fact}` }],
-                details: { corrected: true, method: "delete-regenerate" },
-              };
-            }
+        // PATCH with exponential backoff for transient errors
+        const maxRetries = 3;
+        async function patchWithRetry(): Promise<Response> {
+          let lastRes!: Response;
+          for (let attempt = 0; attempt < maxRetries; attempt++) {
+            const token = getAccessToken();
+            lastRes = await fetch(`${base}/${memoryName}?updateMask=fact`, {
+              method: "PATCH",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ fact: params.new_fact }),
+            });
+            // Success or non-transient error: stop retrying
+            if (lastRes.ok || ![429, 500, 503].includes(lastRes.status)) break;
+            // Transient error: wait and retry
+            const delay = 1000 * Math.pow(2, attempt); // 1s, 2s, 4s
+            await new Promise((r) => setTimeout(r, delay));
+            console.log(`[memory-vertex] correct: PATCH retry ${attempt + 1}/${maxRetries} (${lastRes.status})`);
+          }
+          return lastRes;
+        }
+
+        try {
+          const res = await patchWithRetry();
+
+          if (res.ok) {
+            const updated = await res.json();
             return {
-              content: [{ type: "text" as const, text: `Failed to update memory: ${res.status} ${text}` }],
-              details: { corrected: false },
+              content: [{ type: "text" as const, text: `Memory corrected: ${params.new_fact}` }],
+              details: { corrected: true, method: "patch" },
             };
           }
-          const updated = await res.json();
+
+          // 400/404: memory may not exist. Confirm with GET, then create.
+          if (res.status === 400 || res.status === 404) {
+            const getRes = await fetch(`${base}/${memoryName}`, {
+              method: "GET",
+              headers: { Authorization: `Bearer ${getAccessToken()}` },
+            });
+
+            if (getRes.ok) {
+              // Memory exists but PATCH failed for another reason
+              const text = await res.text();
+              return {
+                content: [{ type: "text" as const, text: `PATCH failed on existing memory (${res.status}): ${text.slice(0, 200)}` }],
+                details: { corrected: false },
+              };
+            }
+
+            // Memory is gone — create a new one via consolidation pipeline
+            const scope = config.scope || { agent_name: "openclaw" };
+            await apiCall(config, `${parent}/memories:generate`, {
+              scope,
+              direct_memories_source: { direct_memories: [{ fact: params.new_fact }] },
+              revision_labels: { source: "tool-correct" },
+            });
+            return {
+              content: [{ type: "text" as const, text: `Memory not found, created new: ${params.new_fact}` }],
+              details: { corrected: true, method: "create" },
+            };
+          }
+
+          // Other errors
+          const text = await res.text();
           return {
-            content: [{ type: "text" as const, text: `Memory corrected: ${JSON.stringify(updated, null, 2)}` }],
-            details: { corrected: true, method: "patch" },
+            content: [{ type: "text" as const, text: `Failed to update memory: ${res.status} ${text.slice(0, 200)}` }],
+            details: { corrected: false },
           };
         } catch (e: any) {
           return {

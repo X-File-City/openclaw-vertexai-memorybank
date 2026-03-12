@@ -222,7 +222,7 @@ The plugin registers four tools that the agent can call directly during conversa
 |------|-------------|
 | `memory_search` | Semantic search — returns facts with similarity scores, topics, timestamps, and memory IDs |
 | `memory_forget` | Delete a specific memory by ID. Useful when the agent discovers outdated or incorrect information |
-| `memory_correct` | Update a memory's fact text in place (PATCH, with delete+regenerate fallback if PATCH fails) |
+| `memory_correct` | Update a memory's fact text in place (PATCH with exponential backoff retry; if memory is missing, creates via consolidation pipeline) |
 | `memory_stats` | Total memory count, breakdown by topic, and scope info. Uses lightweight field-masked counting |
 
 These use `api.registerTool()` and are available to the agent automatically when the plugin is enabled.
