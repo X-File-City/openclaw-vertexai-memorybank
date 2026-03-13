@@ -64,7 +64,7 @@ Add the config **before** installing the plugin. It requires three fields to val
 {
   "plugins": {
     "entries": {
-      "openclaw-vertex-memorybank": {
+      "openclaw-vertexai-memorybank": {
         "enabled": true,
         "config": {
           "projectId": "your-gcp-project-id",
@@ -93,7 +93,7 @@ After install, add `plugins.allow` to your `openclaw.json` to explicitly trust t
 ```json
 {
   "plugins": {
-    "allow": ["openclaw-vertex-memorybank"],
+    "allow": ["openclaw-vertexai-memorybank"],
     "entries": { ... }
   }
 }

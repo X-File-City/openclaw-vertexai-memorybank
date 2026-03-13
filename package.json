@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-vertex-memorybank",
+  "name": "openclaw-vertexai-memorybank",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",

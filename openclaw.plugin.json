@@ -1,5 +1,5 @@
 {
-  "id": "openclaw-vertex-memorybank",
+  "id": "openclaw-vertexai-memorybank",
   "name": "Memory (Vertex AI Memory Bank)",
   "kind": "general",
   "configSchema": {

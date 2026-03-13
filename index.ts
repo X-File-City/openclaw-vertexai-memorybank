@@ -594,7 +594,7 @@ async function listMemories(
 
 // --- Plugin ---
 const plugin = {
-  id: "openclaw-vertex-memorybank",
+  id: "openclaw-vertexai-memorybank",
   name: "Memory (Vertex AI Memory Bank)",
   kind: "general" as const,
 
