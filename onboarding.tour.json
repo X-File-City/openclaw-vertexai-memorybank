@@ -1,0 +1,142 @@
+{
+  "id": "openclaw-memorybank-onboarding",
+  "title": "OpenClaw Vertex AI Memory Bank Plugin",
+  "description": "A guided tour of the Memory Bank plugin — learn how it gives AI agents persistent, cross-session memory powered by Google Vertex AI",
+  "version": "1.0.0",
+  "audience": "New Users & AI Assistants",
+  "prerequisites": ["Basic understanding of AI agent plugins", "Familiarity with TypeScript"],
+  "steps": [
+    {
+      "id": "step-1-overview",
+      "title": "Project Overview",
+      "description": "Welcome to the OpenClaw Vertex AI Memory Bank plugin! This project provides persistent, user-scoped memory for AI agents using Google's Vertex AI Memory Bank service. Unlike session-only memory, memories here survive across all agents and conversations. The codebase is intentionally minimal — a single TypeScript implementation file backed by configuration and documentation.",
+      "estimatedTime": 60,
+      "focusDirectory": "",
+      "colorMode": "fileTypes"
+    },
+    {
+      "id": "step-2-plugin-manifest",
+      "title": "Plugin Manifest",
+      "description": "The plugin manifest (openclaw.plugin.json) declares this package as an OpenClaw plugin. It defines the plugin ID, name, description, entry point (index.ts), and the full configuration schema — including required fields like projectId, location, and reasoningEngineId, plus optional settings for auto-recall, auto-capture, file sync, memory topics, and more.",
+      "estimatedTime": 60,
+      "focusDirectory": "",
+      "highlightLayers": [
+        {
+          "id": "manifest-layer",
+          "name": "Plugin Manifest",
+          "color": "#f59e0b",
+          "items": [
+            { "path": "openclaw.plugin.json", "type": "file" }
+          ],
+          "opacity": 0.8,
+          "renderStrategy": "fill"
+        }
+      ],
+      "colorMode": "fileTypes",
+      "interactiveActions": [
+        {
+          "type": "click-file",
+          "description": "Click openclaw.plugin.json to see the plugin configuration schema",
+          "target": "openclaw.plugin.json"
+        }
+      ]
+    },
+    {
+      "id": "step-3-core-implementation",
+      "title": "Core Implementation",
+      "description": "index.ts is the heart of the plugin — all ~1,000 lines live in one file. It contains: (1) Google ADC authentication with token caching, (2) the Memory Bank REST API client, (3) core operations like retrieve, capture, and sync, (4) file synchronization using SHA-256 hashing, (5) four agent tools (search, forget, correct, stats), and (6) six CLI commands. The plugin registers lifecycle hooks for automatic recall before each agent turn and capture after each turn.",
+      "estimatedTime": 120,
+      "focusDirectory": "",
+      "highlightLayers": [
+        {
+          "id": "core-layer",
+          "name": "Core Plugin Code",
+          "color": "#3b82f6",
+          "items": [
+            { "path": "index.ts", "type": "file" }
+          ],
+          "opacity": 0.8,
+          "renderStrategy": "fill"
+        }
+      ],
+      "colorMode": "fileTypes",
+      "interactiveActions": [
+        {
+          "type": "click-file",
+          "description": "Click index.ts to explore the full plugin implementation",
+          "target": "index.ts"
+        }
+      ]
+    },
+    {
+      "id": "step-4-configuration",
+      "title": "TypeScript & Package Configuration",
+      "description": "The project has zero runtime dependencies — only Node types and TypeScript as dev dependencies. tsconfig.json targets ES2022 with strict mode enabled. package.json defines the package as @anthropic/openclaw-vertexai-memorybank, using the OpenClaw plugin system for distribution.",
+      "estimatedTime": 60,
+      "focusDirectory": "",
+      "highlightLayers": [
+        {
+          "id": "config-layer",
+          "name": "Configuration Files",
+          "color": "#10b981",
+          "items": [
+            { "path": "package.json", "type": "file" },
+            { "path": "tsconfig.json", "type": "file" }
+          ],
+          "opacity": 0.7,
+          "renderStrategy": "fill"
+        }
+      ],
+      "colorMode": "fileTypes",
+      "interactiveActions": [
+        {
+          "type": "click-file",
+          "description": "Click package.json to see the zero-dependency design",
+          "target": "package.json"
+        }
+      ]
+    },
+    {
+      "id": "step-5-documentation",
+      "title": "Documentation & Architecture",
+      "description": "README.md covers setup, configuration, and usage. FAQ.md dives deep into how memory generation works, scoping, pricing, and design decisions. architecture.jpg provides a visual diagram of the data flow between the plugin, OpenClaw, and the Vertex AI Memory Bank service.",
+      "estimatedTime": 60,
+      "focusDirectory": "",
+      "highlightLayers": [
+        {
+          "id": "docs-layer",
+          "name": "Documentation",
+          "color": "#8b5cf6",
+          "items": [
+            { "path": "README.md", "type": "file" },
+            { "path": "FAQ.md", "type": "file" },
+            { "path": "architecture.jpg", "type": "file" }
+          ],
+          "opacity": 0.7,
+          "renderStrategy": "fill"
+        }
+      ],
+      "colorMode": "fileTypes",
+      "interactiveActions": [
+        {
+          "type": "click-file",
+          "description": "Click README.md for setup and usage instructions",
+          "target": "README.md"
+        }
+      ]
+    },
+    {
+      "id": "step-6-wrap-up",
+      "title": "Full Picture",
+      "description": "That's the complete plugin! Key takeaways: (1) Single-file architecture with zero runtime dependencies, (2) Automatic recall and capture via OpenClaw lifecycle hooks, (3) File sync tracks workspace memory files and uploads changes to Vertex AI, (4) Smart caching for tokens (55 min) and memory counts (5 min), (5) Configurable scoping isolates memories per user or any custom key-value pairs. Explore the codebase to learn more!",
+      "estimatedTime": 30,
+      "focusDirectory": "",
+      "colorMode": "fileTypes"
+    }
+  ],
+  "metadata": {
+    "author": "Claude",
+    "createdAt": "2026-03-14",
+    "tags": ["onboarding", "plugin", "memory", "vertex-ai"]
+  }
+}
