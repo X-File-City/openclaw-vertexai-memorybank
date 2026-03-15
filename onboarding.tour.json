@@ -128,7 +128,7 @@
     {
       "id": "step-6-wrap-up",
       "title": "Full Picture",
-      "description": "That's the complete plugin! Key takeaways: (1) Single-file architecture with zero runtime dependencies, (2) Automatic recall and capture via OpenClaw lifecycle hooks, (3) File sync tracks workspace memory files and uploads changes to Vertex AI, (4) Smart caching for tokens (55 min) and memory counts (5 min), (5) Configurable scoping isolates memories per user or any custom key-value pairs. Explore the codebase to learn more!",
+      "description": "That's the complete plugin! Key takeaways: (1) Single-file architecture with zero runtime dependencies, (2) Automatic recall and capture via OpenClaw lifecycle hooks, (3) File sync tracks workspace memory files and uploads changes to Vertex AI, (4) Smart caching for tokens and memory counts, (5) Configurable scoping isolates memories per user or any custom key-value pairs. Explore the codebase to learn more!",
       "estimatedTime": 30,
       "focusDirectory": "",
       "colorMode": "fileTypes"
